@@ -108,7 +108,8 @@ The script supports these OS and architectures:
 |                | i386 | amd64 | armhf | arm64 |
 | -------------- | ---- | ----- | ----- | ----- |
 | Amazon Linux 2 |  ❔  |  ✅  |   ❔  |   ❔  |
-|  Arch Linux    |  ❔  |  ✅  |   ❔  |   ❔  |
+|  Arch Linux    |  ❔  |  ✅  |   ❔  |   ✅  |
+|   Centos 8     |  ❌  |  ✅  |   ❔  |   ❔  |
 |   CentOS 7     |  ❔  |  ✅  |   ❌  |   ✅  |
 |   Debian 8     |  ✅  |  ✅  |   ❌  |   ❌  |
 |   Debian 9     |  ❌  |  ✅  |   ✅  |   ✅  |
@@ -170,6 +171,13 @@ Since 2016, the two scripts have diverged and are not alike anymore, especially 
 **A:** Yes, please head to the [OpenVPN Manual](https://community.openvpn.net/openvpn/wiki/Openvpn24ManPage), which references all the options.
 
 ---
+
+##  One-stop solutions for public cloud
+
+Solutions that provision a ready to use OpenVPN server based on this script in one go are available for:
+
+ - AWS using Terraform at [`openvpn-terraform-install`](https://github.com/dumrauf/openvpn-terraform-install)
+
 
 ## Security and Encryption
 
