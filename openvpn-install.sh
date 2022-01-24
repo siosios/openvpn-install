@@ -1,6 +1,7 @@
 #!/bin/bash
+# shellcheck disable=SC1091,SC2164,SC2034,SC1072,SC1073,SC1009
 
-# Secure OpenVPN server installer for Debian, Ubuntu, CentOS, Amazon Linux 2, Fedora and Arch Linux
+# Secure OpenVPN server installer for Debian, Ubuntu, CentOS, Amazon Linux 2, Fedora, Oracle Linux 8, Arch Linux, Rocky Linux and AlmaLinux.
 # https://github.com/angristan/openvpn-install
 
 function isRoot() {
@@ -51,16 +52,25 @@ function checkOS() {
 		fi
 	elif [[ -e /etc/system-release ]]; then
 		source /etc/os-release
-		if [[ $ID == "fedora" ]]; then
+		if [[ $ID == "fedora" || $ID_LIKE == "fedora" ]]; then
 			OS="fedora"
 		fi
-		if [[ $ID == "centos" ]]; then
+		if [[ $ID == "centos" || $ID == "rocky" || $ID == "almalinux" ]]; then
 			OS="centos"
 			if [[ ! $VERSION_ID =~ (7|8) ]]; then
 				echo "⚠️ Your version of CentOS is not supported."
 				echo ""
 				echo "The script only support CentOS 7 and CentOS 8."
 				echo ""
+				exit 1
+			fi
+		fi
+		if [[ $ID == "ol" ]]; then
+			OS="oracle"
+			if [[ ! $VERSION_ID =~ (8) ]]; then
+				echo "Your version of Oracle Linux is not supported."
+				echo ""
+				echo "The script only support Oracle Linux 8."
 				exit 1
 			fi
 		fi
@@ -77,7 +87,7 @@ function checkOS() {
 	elif [[ -e /etc/arch-release ]]; then
 		OS=arch
 	else
-		echo "Looks like you aren't running this installer on a Debian, Ubuntu, Fedora, CentOS, Amazon Linux 2 or Arch Linux system"
+		echo "Looks like you aren't running this installer on a Debian, Ubuntu, Fedora, CentOS, Amazon Linux 2, Oracle Linux 8 or Arch Linux system"
 		exit 1
 	fi
 }
@@ -109,7 +119,7 @@ hide-version: yes
 use-caps-for-id: yes
 prefetch: yes' >>/etc/unbound/unbound.conf
 
-		elif [[ $OS =~ (centos|amzn) ]]; then
+		elif [[ $OS =~ (centos|amzn|oracle) ]]; then
 			yum install -y unbound
 
 			# Configuration
@@ -164,7 +174,7 @@ prefetch: yes' >>/etc/unbound/unbound.conf
 access-control: fd42:42:42:42::/112 allow' >>/etc/unbound/unbound.conf
 		fi
 
-		if [[ ! $OS =~ (fedora|centos|amzn) ]]; then
+		if [[ ! $OS =~ (fedora|centos|amzn|oracle) ]]; then
 			# DNS Rebinding fix
 			echo "private-address: 10.0.0.0/8
 private-address: fd42:42:42:42::/112
@@ -219,6 +229,7 @@ function installQuestions() {
 
 	# Detect public IPv4 address and pre-fill for the user
 	IP=$(ip -4 addr | sed -ne 's|^.* inet \([^/]*\)/.* scope global.*$|\1|p' | head -1)
+
 	if [[ -z $IP ]]; then
 		# Detect public IPv6 address
 		IP=$(ip -6 addr | sed -ne 's|^.* inet6 \([^/]*\)/.* scope global.*$|\1|p' | head -1)
@@ -232,8 +243,10 @@ function installQuestions() {
 		echo ""
 		echo "It seems this server is behind NAT. What is its public IPv4 address or hostname?"
 		echo "We need it for the clients to connect to the server."
+
+		PUBLICIP=$(curl -s https://api.ipify.org)
 		until [[ $ENDPOINT != "" ]]; do
-			read -rp "Public IPv4 address or hostname: " -e ENDPOINT
+			read -rp "Public IPv4 address or hostname: " -e -i "$PUBLICIP" ENDPOINT
 		done
 	fi
 
@@ -343,7 +356,7 @@ function installQuestions() {
 		fi
 	done
 	echo ""
-	echo "Do you want to use compression? It is not recommended since the VORACLE attack make use of it."
+	echo "Do you want to use compression? It is not recommended since the VORACLE attack makes use of it."
 	until [[ $COMPRESSION_ENABLED =~ (y|n) ]]; do
 		read -rp"Enable compression? [y/n]: " -e -i n COMPRESSION_ENABLED
 	done
@@ -614,14 +627,14 @@ function installOpenVPN() {
 
 		# Behind NAT, we'll default to the publicly reachable IPv4/IPv6.
 		if [[ $IPV6_SUPPORT == "y" ]]; then
-			PUBLIC_IP=$(curl https://ifconfig.co)
+			PUBLIC_IP=$(curl --retry 5 --retry-connrefused https://ifconfig.co)
 		else
-			PUBLIC_IP=$(curl -4 https://ifconfig.co)
+			PUBLIC_IP=$(curl --retry 5 --retry-connrefused -4 https://ifconfig.co)
 		fi
 		ENDPOINT=${ENDPOINT:-$PUBLIC_IP}
 	fi
 
-	# Run setup questions first, and set other variales if auto-install
+	# Run setup questions first, and set other variables if auto-install
 	installQuestions
 
 	# Get the "public" interface from the default route
@@ -661,6 +674,10 @@ function installOpenVPN() {
 		elif [[ $OS == 'centos' ]]; then
 			yum install -y epel-release
 			yum install -y openvpn iptables openssl wget ca-certificates curl tar 'policycoreutils-python*'
+		elif [[ $OS == 'oracle' ]]; then
+			yum install -y oracle-epel-release-el8
+			yum-config-manager --enable ol8_developer_EPEL
+			yum install -y openvpn iptables openssl wget ca-certificates curl tar policycoreutils-python-utils
 		elif [[ $OS == 'amzn' ]]; then
 			amazon-linux-extras install -y epel
 			yum install -y openvpn iptables openssl wget ca-certificates curl
@@ -823,8 +840,8 @@ ifconfig-pool-persist ipp.txt" >>/etc/openvpn/server.conf
 		echo 'push "dhcp-option DNS 77.88.8.1"' >>/etc/openvpn/server.conf
 		;;
 	11) # AdGuard DNS
-		echo 'push "dhcp-option DNS 176.103.130.130"' >>/etc/openvpn/server.conf
-		echo 'push "dhcp-option DNS 176.103.130.131"' >>/etc/openvpn/server.conf
+		echo 'push "dhcp-option DNS 94.140.14.14"' >>/etc/openvpn/server.conf
+		echo 'push "dhcp-option DNS 94.140.15.15"' >>/etc/openvpn/server.conf
 		;;
 	12) # NextDNS
 		echo 'push "dhcp-option DNS 45.90.28.167"' >>/etc/openvpn/server.conf
@@ -861,7 +878,7 @@ push "redirect-gateway ipv6"' >>/etc/openvpn/server.conf
 
 	case $TLS_SIG in
 	1)
-		echo "tls-crypt tls-crypt.key 0" >>/etc/openvpn/server.conf
+		echo "tls-crypt tls-crypt.key" >>/etc/openvpn/server.conf
 		;;
 	2)
 		echo "tls-auth tls-auth.key 0" >>/etc/openvpn/server.conf
@@ -888,9 +905,9 @@ verb 3" >>/etc/openvpn/server.conf
 	mkdir -p /var/log/openvpn
 
 	# Enable routing
-	echo 'net.ipv4.ip_forward=1' >/etc/sysctl.d/20-openvpn.conf
+	echo 'net.ipv4.ip_forward=1' >/etc/sysctl.d/99-openvpn.conf
 	if [[ $IPV6_SUPPORT == 'y' ]]; then
-		echo 'net.ipv6.conf.all.forwarding=1' >>/etc/sysctl.d/20-openvpn.conf
+		echo 'net.ipv6.conf.all.forwarding=1' >>/etc/sysctl.d/99-openvpn.conf
 	fi
 	# Apply sysctl rules
 	sysctl --system
@@ -905,7 +922,7 @@ verb 3" >>/etc/openvpn/server.conf
 	fi
 
 	# Finally, restart and enable OpenVPN
-	if [[ $OS == 'arch' || $OS == 'fedora' || $OS == 'centos' ]]; then
+	if [[ $OS == 'arch' || $OS == 'fedora' || $OS == 'centos' || $OS == 'oracle' ]]; then
 		# Don't modify package-provided service
 		cp /usr/lib/systemd/system/openvpn-server@.service /etc/systemd/system/openvpn-server@.service
 
@@ -913,10 +930,6 @@ verb 3" >>/etc/openvpn/server.conf
 		sed -i 's|LimitNPROC|#LimitNPROC|' /etc/systemd/system/openvpn-server@.service
 		# Another workaround to keep using /etc/openvpn/
 		sed -i 's|/etc/openvpn/server|/etc/openvpn|' /etc/systemd/system/openvpn-server@.service
-		# On fedora, the service hardcodes the ciphers. We want to manage the cipher ourselves, so we remove it from the service
-		if [[ $OS == "fedora" ]]; then
-			sed -i 's|--cipher AES-256-GCM --ncp-ciphers AES-256-GCM:AES-128-GCM:AES-256-CBC:AES-128-CBC:BF-CBC||' /etc/systemd/system/openvpn-server@.service
-		fi
 
 		systemctl daemon-reload
 		systemctl enable openvpn-server@server
@@ -1080,12 +1093,20 @@ function newClient() {
 		echo "Client $CLIENT added."
 	fi
 
-	# Home directory of the user, where the client configuration (.ovpn) will be written
-	if [ -e "/home/$CLIENT" ]; then # if $1 is a user name
-		homeDir="/home/$CLIENT"
-	elif [ "${SUDO_USER}" ]; then # if not, use SUDO_USER
-		homeDir="/home/${SUDO_USER}"
-	else # if not SUDO_USER, use /root
+	# Home directory of the user, where the client configuration will be written
+	if [ -e "/home/${CLIENT}" ]; then
+		# if $1 is a user name
+		homeDir="/home/${CLIENT}"
+	elif [ "${SUDO_USER}" ]; then
+		# if not, use SUDO_USER
+		if [ "${SUDO_USER}" == "root" ]; then
+			# If running sudo as root
+			homeDir="/root"
+		else
+			homeDir="/home/${SUDO_USER}"
+		fi
+	else
+		# if not SUDO_USER, use /root
 		homeDir="/root"
 	fi
 
@@ -1161,6 +1182,7 @@ function revokeClient() {
 	find /home/ -maxdepth 2 -name "$CLIENT.ovpn" -delete
 	rm -f "/root/$CLIENT.ovpn"
 	sed -i "/^$CLIENT,.*/d" /etc/openvpn/ipp.txt
+	cp /etc/openvpn/easy-rsa/pki/index.txt{,.bk}
 
 	echo ""
 	echo "Certificate for client $CLIENT revoked."
@@ -1182,10 +1204,10 @@ function removeUnbound() {
 		systemctl stop unbound
 
 		if [[ $OS =~ (debian|ubuntu) ]]; then
-			apt-get autoremove --purge -y unbound
+			apt-get remove --purge -y unbound
 		elif [[ $OS == 'arch' ]]; then
 			pacman --noconfirm -R unbound
-		elif [[ $OS =~ (centos|amzn) ]]; then
+		elif [[ $OS =~ (centos|amzn|oracle) ]]; then
 			yum remove -y unbound
 		elif [[ $OS == 'fedora' ]]; then
 			dnf remove -y unbound
@@ -1211,7 +1233,7 @@ function removeOpenVPN() {
 		PROTOCOL=$(grep '^proto ' /etc/openvpn/server.conf | cut -d " " -f 2)
 
 		# Stop OpenVPN
-		if [[ $OS =~ (fedora|arch|centos) ]]; then
+		if [[ $OS =~ (fedora|arch|centos|oracle) ]]; then
 			systemctl disable openvpn-server@server
 			systemctl stop openvpn-server@server
 			# Remove customised service
@@ -1245,14 +1267,14 @@ function removeOpenVPN() {
 		fi
 
 		if [[ $OS =~ (debian|ubuntu) ]]; then
-			apt-get autoremove --purge -y openvpn
+			apt-get remove --purge -y openvpn
 			if [[ -e /etc/apt/sources.list.d/openvpn.list ]]; then
 				rm /etc/apt/sources.list.d/openvpn.list
 				apt-get update
 			fi
 		elif [[ $OS == 'arch' ]]; then
 			pacman --noconfirm -R openvpn
-		elif [[ $OS =~ (centos|amzn) ]]; then
+		elif [[ $OS =~ (centos|amzn|oracle) ]]; then
 			yum remove -y openvpn
 		elif [[ $OS == 'fedora' ]]; then
 			dnf remove -y openvpn
@@ -1263,7 +1285,7 @@ function removeOpenVPN() {
 		find /root/ -maxdepth 1 -name "*.ovpn" -delete
 		rm -rf /etc/openvpn
 		rm -rf /usr/share/doc/openvpn*
-		rm -f /etc/sysctl.d/20-openvpn.conf
+		rm -f /etc/sysctl.d/99-openvpn.conf
 		rm -rf /var/log/openvpn
 
 		# Unbound
